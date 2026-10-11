@@ -1,0 +1,69 @@
+#!/bin/sh
+# no-ai-attribution: refuse to push commits, tags or notes that credit an AI tool.
+# Catches anything that skipped commit-msg (--no-verify, plumbing, other machines).
+. "$(dirname "$0")/guard.sh"
+
+remote=$1
+zero_re='^0+$'
+input=$(cat)
+fail=0
+
+check_commit() {
+  c=$1
+  label=$(git log -1 --format='%h %s' "$c")
+  ok=0
+  if ! git log -1 --format=%B "$c" | ag_check_message; then
+    echo "  ^ in commit $label" >&2; ok=1
+  fi
+  author=$(git log -1 --format='%an <%ae>' "$c"); ae=$(git log -1 --format=%ae "$c")
+  committer=$(git log -1 --format='%cn <%ce>' "$c"); ce=$(git log -1 --format=%ce "$c")
+  if ! ag_check_ident author "$author" "$ae" || ! ag_check_ident committer "$committer" "$ce"; then
+    echo "  ^ in commit $label" >&2; ok=1
+  fi
+  return $ok
+}
+
+while read -r lref lsha rref rsha; do
+  [ -z "$lsha" ] && continue
+  printf '%s' "$lsha" | grep -qE "$zero_re" && continue   # deletion
+
+  # annotated tags: check the tag message and tagger too
+  if [ "$(git cat-file -t "$lsha")" = tag ]; then
+    if ! git cat-file tag "$lsha" | sed '1,/^$/d' | ag_check_message; then
+      echo "  ^ in tag $rref" >&2; fail=1
+    fi
+    tagger=$(git cat-file tag "$lsha" | sed -nE 's/^tagger (.*>).*/\1/p')
+    te=$(printf '%s' "$tagger" | sed -nE 's/.*<([^>]*)>.*/\1/p')
+    [ -n "$tagger" ] && { ag_check_ident tagger "$tagger" "$te" || { echo "  ^ in tag $rref" >&2; fail=1; }; }
+  fi
+
+  # new commits: not on the remote side of this ref, nor on any ref of this remote
+  if printf '%s' "$rsha" | grep -qE "$zero_re" || ! git cat-file -e "$rsha^{commit}" 2>/dev/null; then
+    commits=$(git rev-list "$lsha" --not --remotes="$remote" 2>/dev/null)
+  else
+    commits=$(git rev-list "$rsha..$lsha" 2>/dev/null)
+  fi
+  for c in $commits; do check_commit "$c" || fail=1; done
+
+  # notes refs used by AI attribution tools (git-ai, Qwen Code) are refused outright
+  case "$rref" in refs/notes/ai|refs/notes/ai-*|refs/notes/ai-attribution|refs/notes/*attribution*)
+    echo "  refusing to push AI attribution notes: $rref" >&2; fail=1; continue ;;
+  esac
+  # other notes refs: check the text of added notes
+  case "$rref" in refs/notes/*)
+    if printf '%s' "$rsha" | grep -qE "$zero_re" || ! git cat-file -e "$rsha" 2>/dev/null; then
+      added=$(git log -p --format= "$lsha" | sed -n 's/^+//p' | grep -v '^++')
+    else
+      added=$(git log -p --format= "$rsha..$lsha" | sed -n 's/^+//p' | grep -v '^++')
+    fi
+    if ! printf '%s\n' "$added" | ag_check_message; then echo "  ^ in notes $rref" >&2; fail=1; fi
+  ;; esac
+done <<EOF2
+$input
+EOF2
+
+if [ $fail = 1 ]; then
+  echo "no-ai-attribution: push blocked. Reword or re-author those commits first." >&2
+  exit 1
+fi
+printf '%s\n' "$input" | ag_chain pre-push "$@"
