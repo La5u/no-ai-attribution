@@ -7,16 +7,10 @@ if ! grep -v '^#' "$1" | ag_check_message; then
   echo "no-ai-attribution: commit message credits an AI tool (lines above)." >&2
   fail=1
 fi
+for role in author committer; do
+  ident=$(git var "GIT_$(echo $role | tr a-z A-Z)_IDENT" | sed -E 's/ [0-9]+ [-+][0-9]{4}$//')
+  ag_check_ident $role "$ident" || fail=1
+done
 
-author=$(git var GIT_AUTHOR_IDENT | sed -E 's/ [0-9]+ [-+][0-9]{4}$//')
-committer=$(git var GIT_COMMITTER_IDENT | sed -E 's/ [0-9]+ [-+][0-9]{4}$//')
-ae=$(printf '%s' "$author" | sed -nE 's/.*<([^>]*)>.*/\1/p')
-ce=$(printf '%s' "$committer" | sed -nE 's/.*<([^>]*)>.*/\1/p')
-ag_check_ident author "$author" "$ae" || fail=1
-ag_check_ident committer "$committer" "$ce" || fail=1
-
-if [ $fail = 1 ]; then
-  echo "no-ai-attribution: commit rejected." >&2
-  exit 1
-fi
+[ $fail = 1 ] && { echo "no-ai-attribution: commit rejected." >&2; exit 1; }
 ag_chain commit-msg "$@"
