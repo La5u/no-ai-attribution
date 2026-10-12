@@ -77,9 +77,19 @@ ag_check_message() {
     if [ -n "$hit" ]; then
       printf '  line %s: %s\n' "$n" "$line" >&2
       bad=1
+      # scrubbing keeps the subject, minus aider's prefix
+      [ -n "${ag_keep:-}" ] && [ $n -eq 1 ] && printf '%s\n' "$line" | sed -E 's/^[[:space:]]*[Aa][Ii][Dd][Ee][Rr][[:space:]]*:[[:space:]]*//'
+    elif [ -n "${ag_keep:-}" ]; then
+      printf '%s\n' "$line"
     fi
   done
   return $bad
+}
+
+# ag_scrub_message < message -> the message without attribution lines
+ag_scrub_message() {
+  (ag_keep=1; ag_check_message 2>/dev/null) |
+    awk '{ l[NR] = $0 } NF { last = NR } END { for (i = 1; i <= last; i++) print l[i] }'
 }
 
 # ag_check_ident ROLE "Name <email>" -> 0 if acceptable

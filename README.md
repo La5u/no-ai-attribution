@@ -39,8 +39,22 @@ still run. Uninstall with `./uninstall.sh`.
 Ordinary mentions like "Fix Claude API client" or "Fix cursor position" are fine.
 Run `sh tests/run.sh` to see every case.
 
+## Cleaning existing history
+
+The hooks only stop new attribution. To remove it from a repository's past:
+
+```sh
+./scrub-history.sh path/to/repo                   # dry run: show what would change
+./scrub-history.sh --apply path/to/repo           # strip attribution lines, delete AI notes refs
+./scrub-history.sh --apply --authors path/to/repo # also replace AI/bot authors with you
+```
+
+This rewrites every local branch and tag, so commit hashes change. It never
+pushes: run `git push --force-with-lease --all` yourself, and expect anyone with
+a clone to need to re-clone. Originals stay under `refs/original/` until you
+delete them.
+
 ## Limits
 
 - `git push --no-verify` skips all hooks.
 - Repositories with their own `core.hooksPath` (husky, lefthook) need the hooks copied in.
-- Existing history isn't rewritten. Use `git filter-repo` for that.

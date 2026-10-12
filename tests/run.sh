@@ -440,5 +440,29 @@ change; git -c user.email=me@work.example commit -qm "from work address"
 push_allow "checkIdentity: allowed address"
 git config --unset attribution-guard.checkIdentity
 
+# --- scrub-history.sh ----------------------------------------------------------
+new_repo
+change; git commit -q --no-verify -m "$S
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+change; git -c user.name="Me (aider)" commit -q --no-verify -m "aider: add thing"
+git tag -a v1 -m v1; git notes --ref=ai add -m x HEAD
+before=$(git rev-parse HEAD)
+out=$("$root/scrub-history.sh" --authors)
+case "$out" in *"2 commit(s)"*"--apply"*) ok ;; *) bad "scrub dry run: $out" ;; esac
+[ "$(git rev-parse HEAD)" = "$before" ] && ok || bad "scrub dry run changed history"
+echo dirty >> f
+"$root/scrub-history.sh" --apply >/dev/null 2>&1 && bad "scrub ran on a dirty tree" || ok
+git checkout -q f
+"$root/scrub-history.sh" --apply --authors >/dev/null 2>&1 || bad "scrub --apply failed"
+log=$(git log --format='%an <%ae> %cn%n%B' --branches --tags)
+[ "$log" = "$(git log --format='%an <%ae> %cn%n%B' --branches)" ] && ok || bad "scrub left tag on old commit"
+case "$log" in *[Cc]laude*|*aider*) bad "scrub left attribution: $log" ;; *) ok ;; esac
+case "$log" in *"Handle empty input."*"Initial commit"*) ok ;; *) bad "scrub lost message text: $log" ;; esac
+git rev-parse -q --verify refs/notes/ai >/dev/null && bad "scrub kept AI notes" || ok
+case "$("$root/scrub-history.sh")" in "No AI attribution found.") ok ;; *) bad "scrub not idempotent" ;; esac
+
 echo "$pass passed, $failn failed"
 [ "$failn" = 0 ]
