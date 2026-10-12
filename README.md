@@ -44,15 +44,21 @@ Run `sh tests/run.sh` to see every case.
 The hooks only stop new attribution. To remove it from a repository's past:
 
 ```sh
-./scrub-history.sh path/to/repo                   # dry run: show what would change
-./scrub-history.sh --apply path/to/repo           # strip attribution lines, delete AI notes refs
-./scrub-history.sh --apply --authors path/to/repo # also replace AI/bot authors with you
+./scrub-history.sh path/to/repo                # dry run: show what would change
+./scrub-history.sh --apply path/to/repo        # rewrite it
+./scrub-history.sh --deep --apply path/to/repo # rewrite everything, keep no backup
 ```
 
-This rewrites every local branch and tag, so commit hashes change. It never
-pushes: run `git push --force-with-lease --all` yourself, and expect anyone with
-a clone to need to re-clone. Originals stay under `refs/original/` until you
-delete them.
+`--apply` strips attribution lines from commit messages, replaces AI and bot
+authors and committers with you (`--keep-authors` to skip that), and deletes AI
+notes refs. `--deep` also cleans tag messages, taggers and notes, rewrites
+branches that only exist on the remote, lists AI config files (`CLAUDE.md`,
+`.cursor/`, …) still in history, and deletes the backups (`refs/original`, reflog).
+
+This changes commit hashes. It never pushes: run
+`git push --force-with-lease --all && git push --force-with-lease --tags`
+yourself. Existing clones and forks keep the old history, and GitHub may keep
+serving old commits by hash until GitHub Support purges them.
 
 ## Limits
 

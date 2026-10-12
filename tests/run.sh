@@ -441,28 +441,64 @@ push_allow "checkIdentity: allowed address"
 git config --unset attribution-guard.checkIdentity
 
 # --- scrub-history.sh ----------------------------------------------------------
-new_repo
-change; git commit -q --no-verify -m "$S
+attributed_history() {
+  new_repo
+  change; git commit -q --no-verify -m "$S
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
-change; git -c user.name="Me (aider)" commit -q --no-verify -m "aider: add thing"
+  change; git -c user.name="Me (aider)" commit -q --no-verify -m "aider: add thing"
+}
+attributed_history
 git tag -a v1 -m v1; git notes --ref=ai add -m x HEAD
 before=$(git rev-parse HEAD)
-out=$("$root/scrub-history.sh" --authors)
+out=$("$root/scrub-history.sh")
 case "$out" in *"2 commit(s)"*"--apply"*) ok ;; *) bad "scrub dry run: $out" ;; esac
 [ "$(git rev-parse HEAD)" = "$before" ] && ok || bad "scrub dry run changed history"
 echo dirty >> f
 "$root/scrub-history.sh" --apply >/dev/null 2>&1 && bad "scrub ran on a dirty tree" || ok
 git checkout -q f
-"$root/scrub-history.sh" --apply --authors >/dev/null 2>&1 || bad "scrub --apply failed"
+"$root/scrub-history.sh" --apply >/dev/null 2>&1 || bad "scrub --apply failed"
 log=$(git log --format='%an <%ae> %cn%n%B' --branches --tags)
 [ "$log" = "$(git log --format='%an <%ae> %cn%n%B' --branches)" ] && ok || bad "scrub left tag on old commit"
 case "$log" in *[Cc]laude*|*aider*) bad "scrub left attribution: $log" ;; *) ok ;; esac
 case "$log" in *"Handle empty input."*"Initial commit"*) ok ;; *) bad "scrub lost message text: $log" ;; esac
 git rev-parse -q --verify refs/notes/ai >/dev/null && bad "scrub kept AI notes" || ok
+git rev-parse -q --verify refs/original/refs/heads/main >/dev/null && ok || bad "scrub dropped backup without --deep"
 case "$("$root/scrub-history.sh")" in "No AI attribution found.") ok ;; *) bad "scrub not idempotent" ;; esac
+
+attributed_history
+"$root/scrub-history.sh" --apply --keep-authors >/dev/null 2>&1 || bad "scrub --keep-authors failed"
+case "$(git log -1 --format='%an %B')" in "Me (aider) add thing"*) ok ;; *) bad "scrub --keep-authors changed author" ;; esac
+
+# --deep: tags, taggers, notes, remote-only branches, AI files, backups
+attributed_history
+mkdir -p .cursor && echo x > .cursor/rules && echo x > CLAUDE.md && git add -A && git commit -q --no-verify -m "Add rules"
+git notes add -m "Reviewed.
+
+Co-authored-by: Claude <noreply@anthropic.com>" HEAD
+git notes add -m "Plain note" HEAD~1
+git -c user.name=Claude -c user.email=noreply@anthropic.com tag -a v2 -m "Release
+
+Generated with Claude Code" HEAD~1
+git checkout -q -b side && change && git commit -q --no-verify -m "Side work
+
+Co-authored-by: Codex <codex@openai.com>" && git push -q --no-verify origin side 2>/dev/null
+git checkout -q main && git branch -q -D side && git fetch -q origin
+out=$("$root/scrub-history.sh" --deep)
+for want in "tag v2" "tagger: Claude" "notes commits on" "remote-only branch: origin/side" \
+  "AI config file in history (not removed): CLAUDE.md" "AI config file in history (not removed): .cursor/rules" "no undo"; do
+  case "$out" in *"$want"*) ok ;; *) bad "scrub --deep dry run missing '$want': $out" ;; esac
+done
+"$root/scrub-history.sh" --deep --apply >/dev/null 2>&1 || bad "scrub --deep --apply failed"
+case "$(git cat-file tag v2)" in *[Cc]laude*|*anthropic*) bad "scrub --deep left tag attribution" ;; *"tagger Me <me@example.com>"*Release*) ok ;; *) bad "scrub --deep broke tag: $(git cat-file tag v2)" ;; esac
+[ "$(git rev-parse v2^{commit})" = "$(git rev-parse HEAD~1)" ] && ok || bad "scrub --deep tag points at old commit"
+[ "$(git notes show HEAD)" = "Reviewed." ] && ok || bad "scrub --deep notes: $(git notes show HEAD 2>&1)"
+[ "$(git notes show HEAD~1)" = "Plain note" ] && ok || bad "scrub --deep lost note on rewritten commit"
+case "$(git log -1 --format=%B side 2>&1)" in "Side work") ok ;; *) bad "scrub --deep remote-only branch: $(git log -1 --format=%B side 2>&1)" ;; esac
+[ -z "$(git for-each-ref refs/original)" ] && ok || bad "scrub --deep kept refs/original"
+case "$("$root/scrub-history.sh" --deep)" in *"No AI attribution found.") ok ;; *) bad "scrub --deep not idempotent: $("$root/scrub-history.sh" --deep)" ;; esac
 
 echo "$pass passed, $failn failed"
 [ "$failn" = 0 ]
