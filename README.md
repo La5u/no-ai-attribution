@@ -8,6 +8,13 @@ notes to commits. Each has its own setting to turn that off, and agents don't
 always respect it. These hooks enforce it once, for every tool and every repository.
 Plain POSIX `sh`, no dependencies.
 
+```console
+$ git commit -m "Fix parser" -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+  line 3: Co-Authored-By: Claude <noreply@anthropic.com>
+no-ai-attribution: commit message credits an AI tool (lines above).
+no-ai-attribution: commit rejected.
+```
+
 ## Install
 
 ```sh
